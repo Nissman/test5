@@ -1,10 +1,13 @@
 package Chervinskii.tests;
 
+import Chervinskii.db.dao.CategoriesMapper;
+import Chervinskii.db.dao.ProductsMapper;
 import Chervinskii.dto.Category;
 import Chervinskii.dto.Product;
 import Chervinskii.enums.CategoryType;
 import Chervinskii.service.ICategoryService;
 import Chervinskii.service.IProductService;
+import Chervinskii.utils.DbUtils;
 import Chervinskii.utils.PrettyLogger;
 import Chervinskii.utils.RetrofitUtils;
 import com.github.javafaker.Faker;
@@ -22,6 +25,9 @@ import static org.hamcrest.Matchers.*;
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class ProductTests {
+    int productId;
+    static ProductsMapper productsMapper;
+    static CategoriesMapper categoriesMapper;
     static Retrofit client;
     static IProductService productService;
     static ICategoryService categoryService;
@@ -38,6 +44,8 @@ public class ProductTests {
         client = RetrofitUtils.getRetrofit();
         productService = client.create(IProductService.class);
         categoryService = client.create(ICategoryService.class);
+        productsMapper = DbUtils.getProductsMapper();
+        categoriesMapper = DbUtils.getCategoriesMapper();
     }
 
     @BeforeEach
@@ -69,8 +77,17 @@ public class ProductTests {
     @Order(2)
     @Test
     void postProductTest() throws  IOException {
+        Integer countProductsBefore = DbUtils.countProducts(productsMapper);
         Response<Product> response = productService.createProduct(product).execute();
+        Integer countProductsAfter = DbUtils.countProducts(productsMapper);
         id_1 = response.body().getId();
+        String title = DbUtils.selectProductTitleByID(productsMapper, id_1);
+        int price = DbUtils.selectProductPriceByID(productsMapper, id_1);
+        //проверка ответа по БД
+        assertThat(response.body().getTitle(), equalTo(title));
+        assertThat(response.body().getPrice(), equalTo(price));
+        assertThat(countProductsAfter,equalTo(countProductsBefore+1));
+        //проверка ответа по продукту
         assertThat(response.body().getTitle(), equalTo(product.getTitle()));
         assertThat(response.body().getPrice(), equalTo(product.getPrice()));
         assertThat(response.body().getCategoryTitle(),equalTo(product.getCategoryTitle()));
@@ -86,10 +103,17 @@ public class ProductTests {
     @Order(4)
     @Test
     void postProductNoPriceTest() throws  IOException {
+        Integer countProductsBefore = DbUtils.countProducts(productsMapper);
         Response<Product> response = productService.createProduct(productNoPrice).execute();
+        Integer countProductsAfter = DbUtils.countProducts(productsMapper);
         id_2 = response.body().getId();
-        prettyLogger.log(response.body().toString());
+        String title = DbUtils.selectProductTitleByID(productsMapper, id_2);
+        int price = DbUtils.selectProductPriceByID(productsMapper, id_2);
         assertThat(response.body().getPrice(), equalTo(0));
+        //проверка ответа по БД
+        assertThat(countProductsAfter,equalTo(countProductsBefore+1));
+        assertThat(response.body().getPrice(), equalTo(price));
+        assertThat(response.body().getTitle(), equalTo(title));
     }
 
     @Order(5)
@@ -97,8 +121,14 @@ public class ProductTests {
     void postProductZeroPriceTest() throws  IOException {
         Response<Product> response = productService.createProduct(productZeroPrice).execute();
         id_3 = response.body().getId();
+        String title = DbUtils.selectProductTitleByID(productsMapper, id_3);
+        int price = DbUtils.selectProductPriceByID(productsMapper, id_3);
         prettyLogger.log(response.body().toString());
+        //проверка ответа по продукту
         assertThat(response.body().getPrice(), equalTo(productZeroPrice.getPrice()));
+        //проверка ответа по БД
+        assertThat(response.body().getPrice(), equalTo(price));
+        assertThat(response.body().getTitle(), equalTo(title));
     }
 
     @Order(6)
@@ -121,11 +151,20 @@ public class ProductTests {
     @Test
     void updateProductWithIdTest() throws IOException{
         productZeroPrice.setId(id_1);
-        Response<Product> response = productService.putProduct(productZeroPrice).execute();
-        assertThat(response.body().getPrice(), equalTo(productZeroPrice.getPrice()));
-        assertThat(response.body().getId(), equalTo(id_1));
-        assertThat(response.body().getTitle(), equalTo(productZeroPrice.getTitle()));
-        assertThat(response.body().getCategoryTitle(),equalTo(productZeroPrice.getCategoryTitle()));
+        //Обновление через БД
+        DbUtils.updateProductById(productZeroPrice,productsMapper);
+        String title = DbUtils.selectProductTitleByID(productsMapper, id_1);
+        int price = DbUtils.selectProductPriceByID(productsMapper, id_1);
+        //Response<Product> response = productService.putProduct(productZeroPrice).execute();
+
+        //проверка обновления по ответу
+        Response<Product> response = productService.getProduct(id_1).execute();
+        assertThat(response.body().getPrice(), equalTo(price));
+        assertThat(response.body().getTitle(), equalTo(title));
+        //assertThat(response.body().getPrice(), equalTo(productZeroPrice.getPrice()));
+        //assertThat(response.body().getId(), equalTo(id_1));
+        //assertThat(response.body().getTitle(), equalTo(productZeroPrice.getTitle()));
+        //assertThat(response.body().getCategoryTitle(),equalTo(productZeroPrice.getCategoryTitle()));
     }
 
     @Order(9)
@@ -148,6 +187,11 @@ public class ProductTests {
     void getProductTest() throws IOException {
         Response<Product> response = productService.getProduct(id_1).execute();
         assertThat(response.code(), equalTo(200));
+        //получение продукта через БД и проверка по ответу
+        String title = DbUtils.selectProductTitleByID(productsMapper, id_1);
+        int price = DbUtils.selectProductPriceByID(productsMapper, id_1);
+        assertThat(response.body().getTitle(), equalTo(title));
+        assertThat(response.body().getPrice(), equalTo(price));
     }
 
     @Order(12)
@@ -160,25 +204,39 @@ public class ProductTests {
     @Order(13)
     @Test
     void deleteProduct_1() throws IOException {
-        Response<ResponseBody> response = productService.deleteProduct(id_1).execute();
-        assertThat(response.isSuccessful(), CoreMatchers.is(true));
-        assertThat(response.code(), equalTo(200));
+        //удалние через БД, проверка через АПИ
+        DbUtils.deleteProductById(id_1, productsMapper);
+        Response<Product> response = productService.getProduct(id_1).execute();
+        assertThat(response.code(), equalTo(404));
+        //Response<ResponseBody> response = productService.deleteProduct(id_1).execute();
+        //assertThat(response.isSuccessful(), CoreMatchers.is(true));
+        //assertThat(response.code(), equalTo(200));
     }
 
     @Order(14)
     @Test
     void deleteProduct_2() throws IOException {
-        Response<ResponseBody> response = productService.deleteProduct(id_2).execute();
-        assertThat(response.isSuccessful(), CoreMatchers.is(true));
-        assertThat(response.code(), equalTo(200));
+        //удалние через БД, проверка через АПИ
+        DbUtils.deleteProductById(id_2, productsMapper);
+        Response<Product> response = productService.getProduct(id_2).execute();
+        assertThat(response.code(), equalTo(404));
+
+        //Response<ResponseBody> response = productService.deleteProduct(id_2).execute();
+        //assertThat(response.isSuccessful(), CoreMatchers.is(true));
+        //assertThat(response.code(), equalTo(404));
     }
 
     @Order(15)
     @Test
     void deleteProduct_3() throws IOException {
-        Response<ResponseBody> response = productService.deleteProduct(id_3).execute();
-        assertThat(response.isSuccessful(), CoreMatchers.is(true));
-        assertThat(response.code(), equalTo(200));
+        //удалние через БД, проверка через АПИ
+        DbUtils.deleteProductById(id_3, productsMapper);
+        Response<Product> response = productService.getProduct(id_3).execute();
+        assertThat(response.code(), equalTo(404));
+
+       // Response<ResponseBody> response = productService.deleteProduct(id_3).execute();
+        //assertThat(response.isSuccessful(), CoreMatchers.is(true));
+       // assertThat(response.code(), equalTo(200));
     }
 
     @Order(16)
@@ -193,12 +251,14 @@ public class ProductTests {
     @Test
     void getCategoryByIdTest() throws IOException {
         Integer id = CategoryType.FOOD.getId();
+        //получение заголовка категории через БД и сравнение с АПИ ответом
+        String title = DbUtils.getCategoryTitleFromBdByID(id,categoriesMapper);
         Response<Category> response = categoryService
                 .getCategory(id)
                 .execute();
-        prettyLogger.log(response.body().toString());
         assertThat(response.body().getTitle(), equalTo(CategoryType.FOOD.getTitle()));
         assertThat(response.body().getId(),equalTo(id));
+        assertThat(response.body().getTitle(),equalTo(title));
     }
 
     @Order(18)
